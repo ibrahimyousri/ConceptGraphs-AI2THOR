@@ -1,5 +1,5 @@
 # ConceptGraphs: Open-Vocabulary 3D Scene Graphs for Perception and Planning
-## This fork contains configurated ConceptGraphs for the object rearrangement task in AI-2THOR, Specifically  to help [this repository](https://github.com/ibrahimyousri/object-rearrangement).
+## This fork contains configurated ConceptGraphs for the object rearrangement task in AI-2THOR, specifically  to help [this repository](https://github.com/ibrahimyousri/object-rearrangement).
 
 [**Project Page**](https://concept-graphs.github.io/) |
 [**Paper**](https://concept-graphs.github.io/assets/pdf/2023-ConceptGraphs.pdf) |
