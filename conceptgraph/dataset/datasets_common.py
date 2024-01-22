@@ -21,7 +21,7 @@ import torch
 import torch.nn.functional as F
 import yaml
 from natsort import natsorted
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation
 
 from gradslam.datasets import datautils
 from gradslam.geometry.geometryutils import relative_transformation
@@ -422,6 +422,8 @@ class ICLDataset(GradSLAMDataset):
         embedding = torch.load(embedding_file_path)
         return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
 
+#calvin dataset integration with conceptgraph
+#class CalvinDataset(GradSLAMDataset):
 
 class ReplicaDataset(GradSLAMDataset):
     def __init__(
@@ -536,75 +538,6 @@ class ScannetDataset(GradSLAMDataset):
         embedding = torch.load(embedding_file_path, map_location="cpu")
         return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
 
-
-class Ai2thorDataset(GradSLAMDataset):
-    def __init__(
-        self,
-        config_dict,
-        basedir,
-        sequence,
-        stride: Optional[int] = None,
-        start: Optional[int] = 0,
-        end: Optional[int] = -1,
-        desired_height: Optional[int] = 968,
-        desired_width: Optional[int] = 1296,
-        load_embeddings: Optional[bool] = False,
-        embedding_dir: Optional[str] = "embeddings",
-        embedding_dim: Optional[int] = 512,
-        **kwargs,
-    ):
-        self.input_folder = os.path.join(basedir, sequence)
-        super().__init__(
-            config_dict,
-            stride=stride,
-            start=start,
-            end=end,
-            desired_height=desired_height,
-            desired_width=desired_width,
-            load_embeddings=load_embeddings,
-            embedding_dir=embedding_dir,
-            embedding_dim=embedding_dim,
-            **kwargs,
-        )
-
-    def get_filepaths(self):
-        color_paths = natsorted(glob.glob(f"{self.input_folder}/color/*.png"))
-        depth_paths = natsorted(glob.glob(f"{self.input_folder}/depth/*.png"))
-        embedding_paths = None
-        if self.load_embeddings:
-            if self.embedding_dir == "embed_semseg":
-                # embed_semseg is stored as uint16 pngs
-                embedding_paths = natsorted(
-                    glob.glob(f"{self.input_folder}/{self.embedding_dir}/*.png")
-                )
-            else:
-                embedding_paths = natsorted(
-                    glob.glob(f"{self.input_folder}/{self.embedding_dir}/*.pt")
-                )
-        return color_paths, depth_paths, embedding_paths
-
-    def load_poses(self):
-        poses = []
-        posefiles = natsorted(glob.glob(f"{self.input_folder}/pose/*.txt"))
-        for posefile in posefiles:
-            _pose = torch.from_numpy(np.loadtxt(posefile))
-            poses.append(_pose)
-        return poses
-
-    def read_embedding_from_file(self, embedding_file_path):
-        if self.embedding_dir == "embed_semseg":
-            embedding = imageio.imread(embedding_file_path) # (H, W)
-            embedding = cv2.resize(
-                embedding, (self.desired_width, self.desired_height), interpolation=cv2.INTER_NEAREST
-            )
-            embedding = torch.from_numpy(embedding).long() # (H, W)
-            embedding = F.one_hot(embedding, num_classes = self.embedding_dim) # (H, W, C)
-            embedding = embedding.half() # (H, W, C)
-            embedding = embedding.permute(2, 0, 1) # (C, H, W)
-            embedding = embedding.unsqueeze(0) # (1, C, H, W)
-        else:
-            embedding = torch.load(embedding_file_path, map_location="cpu")
-        return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
 
 class AzureKinectDataset(GradSLAMDataset):
     def __init__(
@@ -934,7 +867,62 @@ class MultiscanDataset(GradSLAMDataset):
     def read_embedding_from_file(self, embedding_file_path):
         embedding = torch.load(embedding_file_path)
         return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
+class ai2thor(GradSLAMDataset):
+    def __init__(
+        self,
+        config_dict,
+        basedir,
+        sequence,
+        stride: Optional[int] = None,
+        start: Optional[int] = 0,
+        end: Optional[int] = -1,
+        desired_height: Optional[int] = 1000,
+        desired_width: Optional[int] = 1000,
+        load_embeddings: Optional[bool] = False,
+        embedding_dir: Optional[str] = "embeddings",
+        embedding_dim: Optional[int] = 512,
+        **kwargs,
+    ):
+        self.input_folder = os.path.join(basedir, sequence)
+        self.pose_path = os.path.join(self.input_folder, "traj.txt")
+        super().__init__(
+            config_dict,
+            stride=stride,
+            start=start,
+            end=end,
+            desired_height=desired_height,
+            desired_width=desired_width,
+            load_embeddings=load_embeddings,
+            embedding_dir=embedding_dir,
+            embedding_dim=embedding_dim,
+            **kwargs,
+        )
 
+    def get_filepaths(self):
+        color_paths = natsorted(glob.glob(f"{self.input_folder}/results/frame*.jpg"))
+        depth_paths = natsorted(glob.glob(f"{self.input_folder}/results/depth*.png"))
+        embedding_paths = None
+        if self.load_embeddings:
+            embedding_paths = natsorted(
+                glob.glob(f"{self.input_folder}/{self.embedding_dir}/*.pt")
+            )
+        return color_paths, depth_paths, embedding_paths
+
+    def load_poses(self):
+        poses = []
+        with open(self.pose_path, "r") as f:
+            lines = f.readlines()
+        for i in range(self.num_imgs):
+            line = lines[i]
+            c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
+            c2w[:3, 1] *= -1
+            #c2w[:3, 2] *= -1
+            c2w = torch.from_numpy(c2w).float()
+            poses.append(c2w)
+        return poses
+    def read_embedding_from_file(self, embedding_file_path):
+        embedding = torch.load(embedding_file_path)
+        return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
 
 class Hm3dDataset(GradSLAMDataset):
     def __init__(
@@ -1097,8 +1085,6 @@ def get_dataset(dataconfig, basedir, sequence, **kwargs):
         return AzureKinectDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["scannet"]:
         return ScannetDataset(config_dict, basedir, sequence, **kwargs)
-    elif config_dict["dataset_name"].lower() in ["ai2thor"]:
-        return Ai2thorDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["record3d"]:
         return Record3DDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["realsense"]:
@@ -1107,6 +1093,8 @@ def get_dataset(dataconfig, basedir, sequence, **kwargs):
         return MultiscanDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict['dataset_name'].lower() in ['hm3d']:
         return Hm3dDataset(config_dict, basedir, sequence, **kwargs)
+    elif config_dict['dataset_name'].lower() in ['ai2thor']:
+        return ai2thor(config_dict, basedir, sequence, **kwargs)
     else:
         raise ValueError(f"Unknown dataset name {config_dict['dataset_name']}")
 
